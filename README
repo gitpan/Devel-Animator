@@ -1,0 +1,30 @@
+NAME
+    Devel::Animator - Watch program flow like a movie
+
+SYNOPSIS
+      perl -d:Animator program
+
+
+DESCRIPTION
+     Animator lets you run a program and watch program flow. You can
+   stop animation and start it again, reverse direction from forward
+   to backwards, and backwards to forward. You can change the 
+   animation speed from 10 milliseconds to 2000 milliseconds between
+   statements.
+
+
+DETAILS
+    Animation doesn't start until meta-data has been completely 
+  generated. The Animator should be used with small data sets.
+
+
+TODO
+    *  allow the animation of selected portions of code 
+
+    *  allow suppressing of animating certain packages 
+
+
+Author
+    Dennis Spera -- asaag@cpan.org
+
+
