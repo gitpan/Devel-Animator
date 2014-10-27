@@ -6,12 +6,7 @@ SYNOPSIS
 
 
 DESCRIPTION
-     Animator lets you run a program and watch program flow. You can
-   stop animation and start it again, reverse direction from forward
-   to backwards, and backwards to forward. You can change the 
-   animation speed from 10 milliseconds to 2000 milliseconds between
-   statements.
-
+     Animator lets you run a program and watch program flow. 
 
 DETAILS
     Animation doesn't start until meta-data has been completely 
@@ -19,10 +14,6 @@ DETAILS
 
 
 TODO
-    *  allow the animation of selected portions of code 
-
-    *  allow suppressing of animating certain packages 
-
 
 Author
     Dennis Spera -- asaag@cpan.org

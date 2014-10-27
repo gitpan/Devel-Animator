@@ -1,8 +1,9 @@
    
     package Devel::Animator;   
-    our $VERSION = '1.00';   
+    our $VERSION = '2.00';   
     my $pl  = 'animate.pl';
     my $stk = 'stack.dat'; 
+	$DB::index=1;
     unlink $pl;
     unlink $stk;
     &display;
@@ -31,16 +32,18 @@
     1;    
 
     __DATA__
-
+	
+#  set_init_state failing because meta_ref may not have updated sequence array in bypass_file
 use strict;
 use warnings;
 use Tk;
 use Tk::Table;
 use Tk::StatusBar;
 use Tk::BrowseEntry;
+use Tk::Balloon;
 use File::stat;
 if ($^O eq 'MSWin32') { require Win32::GUI;}
-no warnings 'recursion';
+no warnings qw(recursion deprecated);
 
 BEGIN { 
 package Devel;  
@@ -83,7 +86,7 @@ my $self = shift;
 sub done_loading_meta_data {
 my $self = shift;
 
-     my $filesz = -s $self->{'_stack_file'}; 
+        my $filesz = -s $self->{'_stack_file'}; 
    if ( ! $self->{_loaded} ) {
        if ( $self->{_filesize} eq  $filesz and $filesz > 0 ) {              
          # load file into array    
@@ -95,12 +98,31 @@ my $self = shift;
            push( @meta, $_ );		   
          }
         
+         $self->set('_meta_data_start', '1'); 	
+		 $self->set('_meta_data_start_display', sprintf( "%8d", 1 ));
+		 $self->set('_meta_data_end', scalar(@meta));
+		 $self->set('_meta_data_end_display', sprintf( "%8d",  scalar(@meta)));
          $self->set('_meta_ref', \@meta);
          $self->update_delay(50); 
          $self->set('_loaded', 1);
          $self->set('_status', "RUNNING");
          $self->set('_msg', "Animation in Progress");  
          $self->load_file_cache();
+		 		 
+         $self->{_filelist_ref} = $self->get_file_names;
+         $self->{_mw}->{_filelist}->configure( -choices => $self->{_filelist_ref} );
+         $self->{_mw}->{_filelist}->configure( -browsecmd => sub { $self->bypass_file } );		
+		 
+		 $self->{_mw}->{_mod_start_seq}->delete( 0.1, 'end' );
+		 $self->{_mw}->{_mod_start_seq}->insert("end", "$self->{_meta_data_start}");
+		 
+         $self->{_mw}->{_mod_end_seq}->delete( 0.1, 'end' );
+		 $self->{_mw}->{_mod_end_seq}->insert("end", "$self->{_meta_data_end}");
+		 
+		 #use Data::Dumper;
+		 #print Dumper(@meta);
+		 #exit;
+		 
          return(1);
        }
        else 
@@ -111,6 +133,58 @@ my $self = shift;
           }    
    }
 return(1);
+}
+
+sub bypass_file {
+my $self = shift;
+my @temp1 = ();
+my @temp2 = ();
+my $start_seq=1;
+
+my ($sequence, $file, $line, $code);
+ $self->set_stopped_state(); 
+ # define the different states
+
+ # add file to bypass list
+ push(@{$self->{_bypass_file_ref}}, $self->{_filelist});
+
+ # re-define meta-ref 
+   foreach (@{$self->{_meta_ref}}) {
+    $sequence = substr $_, 0, 6;
+    $file     = substr $_, 6, 128;
+    $line     = substr $_, 134, 6;
+    $code     = substr $_, 140, 80;
+   
+    if ( $self->trim($self->{_filelist}) ne $self->trim($file )) {
+        # re-number sequence
+        $sequence = sprintf( "%6d", $start_seq++ );
+        $file     = substr $_, 6,   128;
+        $line     = substr $_, 134,   6;
+        $code     = substr $_, 140,  80;
+	    push( @temp2, $sequence . $file . $line . $code );
+	}
+  }
+  $self->set('_meta_ref', \@temp2);
+    
+ # update status bar
+ $self->{_meta_data_end_display} = scalar(@{$self->{_meta_ref}});
+ 
+ # update browse-entry widget
+ foreach (@{$self->{_filelist_ref}}) {
+  if ( $_ ne $self->{_filelist} ) {
+   push (@temp1, $_ );
+  }
+ } 
+ 
+ # initialize be widget entry value to be not filled
+ $self->{_filelist} = undef;
+
+ # update the files in widget 
+ $self->{_filelist_ref} = \@temp1;
+ $self->{_mw}->{_filelist}->configure( -choices => $self->{_filelist_ref} );
+
+ # initialize program
+ $self->set_init_state();
 }
 
 sub exit_app { 
@@ -126,8 +200,9 @@ my $self = shift;
 my $mw = shift;
 
  if ($^O eq 'MSWin32') {
-   return( $mw->screenwidth);
- }
+   #return( int($mw->screenwidth * .99));
+   return( $self->{_mw}->fontMeasure('TkDefaultFont', 'X') * 100);
+   }
 }
 
 sub get_screen_height {
@@ -143,16 +218,79 @@ sub create_control {
 my $self = shift;
 my ( $frame);
 
+$self->{_msgarea} = $self->{_mw}->Label(-borderwidth => 2, -relief => 'groove')->pack(-side => 'bottom', -fill => 'x');
+my $balloon = $self->{_mw}->Balloon(-statusbar => $self->{_msgarea}, -bg => 'yellow');
+
 $self->{_mw}->Label(-bg => 'grey', -borderwidth => 0, -relief => 'sunken',  -text => 'Perl Source Code Animator', )->pack(-anchor => 'n', -fill => 'both'); 
 $frame = $self->{_mw}->Frame()->pack(-expand => 0, -fill => 'both');
 $self->set( '_frame', $frame);
 $self->{_mw}->{_exit}  = $frame->Button(-width => $self->{_button_width}, -text=>"Exit", -command=>sub{ $self->exit_app()} )->pack(-side=>"left");
+$balloon->attach($self->{_mw}->{_exit}, -balloonmsg => "Exit the App", -statusmsg => "Press the Button to exit the application");
+
 $self->{_mw}->{_stop}  = $frame->Button(-width => $self->{_button_width}, -text=>"Stop", -command=>sub{ $self->stop_app()} )->pack(-side=>"left");
+$balloon->attach($self->{_mw}->{_stop}, -balloonmsg => "Stop the App", -statusmsg => "Press the Button to pause the application");
+
 $self->{_mw}->{_start} = $frame->Button(-width => $self->{_button_width}, -text=>"Start",-command=>sub{ $self->start_app()})->pack(-side=>"left");
-$self->{_mw}->{_dir}   = $frame->BrowseEntry(-label => "Direction", -variable => \$self->{_direction}, -width => '10');
+$balloon->attach($self->{_mw}->{_start}, -balloonmsg => "Start the App", -statusmsg => "Press the Button to start the application");
+
+$self->{_mw}->{_reset} = $frame->Button(-width => $self->{_button_width}, -text=>"Reset",-command=>sub{ $self->set_init_state()})->pack(-side=>"left");
+$balloon->attach($self->{_mw}->{_reset}, -balloonmsg => "Reset the App", -statusmsg => "Press the Button to reset the application to the initial state");
+
+$self->{_filelist} = 'loading...';
+
+$self->{_mw}->{_repeat}      = $frame->BrowseEntry(-label => "Repeat", -variable => \$self->{_repeat}, -width => '10');
+$self->{_mw}->{_repeat}->insert("end", "YES");
+$self->{_mw}->{_repeat}->insert("end", "NO");
+$self->{_mw}->{_repeat}->pack(-side=>"right");
+
+
+$self->{_repeat} = "NO";
+$balloon->attach($self->{_mw}->{_repeat}, -balloonmsg => "Enable App Looping", -statusmsg => "Press the dropdown to set whether application loops");
+
+$self->{_mw}->{_mod_end_seq} = $frame->Entry(  
+		                                    -background  => 'yellow',
+		                                    -foreground  => 'black',
+	                                        -width       => 10,
+                                            -justify     => 'right',
+		                                    )->pack(-side=>"right");
+$self->{_mw}->{_mod_end_seq}->insert("end", 0);
+$self->{_mw}->{_mod_end_seq}->bind( '<Button-1>', sub {
+                                                       unless ( $self->{_status} eq 'STOPPED' ) {
+                                                          $self->set_stopped_state();
+														}
+                                                        $self->{_mw}->{_mod_end_seq}->delete( 0.1, 'end' ); 
+                                                      } );
+													  
+$balloon->attach($self->{_mw}->{_mod_end_seq}, -balloonmsg => "End sequence number", -statusmsg => "Enter integer value for end sequence number for animation");
+													  
+													  
+$self->{_mw}->{_mod_start_seq} = $frame->Entry( 
+		                                      -background  => 'yellow',
+		                                      -foreground  => 'black',
+	                                          -width       => 10,
+                                              -justify     => 'right',
+		                                      )->pack(-side=>"right");
+$self->{_mw}->{_mod_start_seq}->insert("end", 0);
+$self->{_mw}->{_mod_start_seq}->bind( '<Button-1>', sub { 
+                                                       unless ( $self->{_status} eq 'STOPPED' ) {
+                                                          $self->set_stopped_state();
+														}
+                                                        $self->{_mw}->{_mod_start_seq}->delete( 0.1, 'end' ); 
+                                                        } );
+$balloon->attach($self->{_mw}->{_mod_start_seq}, -balloonmsg => "Start sequence number", -statusmsg => "Enter integer value for start sequence number for animation");
+
+$self->{_mw}->{_filelist}   = $frame->BrowseEntry(-label => "Bypass a file", -variable => \$self->{_filelist}, -width => '30' );
+$self->{_mw}->{_filelist}->pack(-side=>"right");
+
+$balloon->attach($self->{_mw}->{_filelist}, -balloonmsg => "omit from animation", -statusmsg => "select a file to omit from animation");
+
+$self->{_mw}->{_dir}      = $frame->BrowseEntry(-label => "Direction", -variable => \$self->{_direction}, -width => '10');
 $self->{_mw}->{_dir}->insert("end", "FWD");
 $self->{_mw}->{_dir}->insert("end", "REV");
 $self->{_mw}->{_dir}->pack(-side=>"right");
+
+$balloon->attach($self->{_mw}->{_dir}, -balloonmsg => "select direction", -statusmsg => "select forward or reverse direction for animation");
+
 $self->{_mw}->{speed}  = $frame->BrowseEntry(-label => "Speed(ms)", -variable => \$self->{_delay}, -width => '10', -browsecmd => sub { $self->update_delay($self->{_delay}) }  );
 $self->{_mw}->{speed}->insert("end", "50");
 $self->{_mw}->{speed}->insert("end", "100");
@@ -163,6 +301,35 @@ $self->{_mw}->{speed}->insert("end", "1000");
 $self->{_mw}->{speed}->insert("end", "2000");
 $self->{_mw}->{speed}->pack(-side=>"right");
 
+$balloon->attach($self->{_mw}->{speed}, -balloonmsg => "select speed", -statusmsg => "select the desired speed for animation for animation");
+}
+
+sub get_file_names {
+my $self = shift;
+my @ary = ();
+return \@ary if ! defined(@{$self->{_cache_ref}});
+
+   foreach my $ref (@{$self->{_cache_ref}}) { 
+    push( @ary, ${$$ref}{name});   
+   }
+ return( \@ary);  
+}
+
+sub config_window {
+my $self = shift;
+
+$self->{_mw}->{_config_window} = $self->{_mw}->Toplevel();
+$self->set( '_config_window', $self->{_mw}->{_config_window});
+$self->{_config_window}->title('Config');
+$self->{_config_window}->Label(-bg => 'grey', -borderwidth => 0, -relief => 'sunken',  -text => 'Configuration Setup', )->pack(-anchor => 'n', -fill => 'both'); 
+my $top = $self->{_config_window}->Frame(-background => 'pink'  )->pack(-expand => 0, -fill => 'both');
+my $bottom = $self->{_config_window}->Frame(-background => 'white' )->pack(-expand => 0, -fill => 'both');
+
+$top->Label(-bg => 'pink',  -borderwidth => 0, -relief => 'sunken',  -text => 'meta data begin', )->pack(-side => 'left');
+$top->Label(-bg => 'white', -fg => 'grey', -borderwidth => 1, -relief => 'sunken',  -text => $self->{_meta_data_start} )->pack(-side => 'left', -padx => 2, -pady => 2);
+$top->Label(-bg => 'pink', -borderwidth => 0, -relief => 'sunken',  -text => ' ', )->pack(-side => 'left', -padx => 20);
+$top->Label(-bg => 'pink', -borderwidth => 0, -relief => 'sunken',  -text => 'meta data end', )->pack(-side => 'left');
+$top->Label(-bg => 'white', -fg => 'grey', -borderwidth => 1, -relief => 'sunken',  -text => $self->{_meta_data_end}, )->pack(-side => 'left', -padx => 2, -pady => 2);
 }
 
 sub create_table {
@@ -179,18 +346,46 @@ my $self = shift;
 
 sub create_status_bar {
 my $self = shift;
-
+ 
  $self->{_status_bar} = $self->{_mw}->StatusBar()->pack(-expand => 0, -fill => 'x');
- $self->{_status_bar}->addLabel( -relief         => 'flat',          -textvariable   => \$self->{_msg} );
- $self->{_status_bar}->addLabel( -textvariable   => \$self->{_loaded_file},   -width => '35',  -anchor => 'w', -foreground => 'black', );
- $self->{_status_bar}->addLabel( -textvariable   => \$self->{_cur_srce_line}, -width =>  '4',  -anchor => 'e', -foreground => 'black', );
- $self->{_status_bar}->addLabel( -textvariable   => \$self->{_cur_exec_line}, -width =>  '5',  -anchor => 'e', -foreground => 'black', );
- $self->{_status_bar}->addLabel( -textvariable   => \$self->{_pct_complete},  -width =>  '5',  -anchor => 'e', -foreground => 'black', );
- $self->{_status_bar}->addLabel( -relief         => 'flat',  -text   => "  ", -width =>  '2',  -anchor => 'w', -foreground => 'blue', );    
- $self->{_status_bar}->addLabel( -textvariable   => \$self->{_status},-width => '10',  -anchor => 'center', -foreground => 'blue', );
- $self->{_status_bar}->addLabel( -textvariable   => \$self->{_direction},     -width => '5',   -anchor => 'center', -foreground => 'blue', );
- $self->{_status_bar}->addLabel( -textvariable   => \$self->{_delay_msg},     -width => '10',  -anchor => 'center', -foreground => 'blue', );
-}
+
+ my $msgarea = $self->{_mw}->Label(-borderwidth => 2, -relief => 'groove')->pack(-side => 'bottom', -fill => 'x');
+ my $balloon = $self->{_mw}->Balloon(-statusbar => $self->{_msgarea}, -bg => 'yellow');
+
+
+ my $msg = $self->{_status_bar}->addLabel( -relief         => 'flat',          -textvariable   => \$self->{_msg} );
+ $balloon->attach($msg, -balloonmsg => "status message", -statusmsg => "current informational message");
+
+ my $file = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_loaded_file},   -width => '35',  -anchor => 'w', -foreground => 'black', );
+ $balloon->attach($file, -balloonmsg => "file being animated", -statusmsg => "current file meta-data being executed");
+
+ my $cur_srce_line = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_cur_srce_line}, -width =>  '4',  -anchor => 'e', -foreground => 'black', );
+ $balloon->attach($cur_srce_line, -balloonmsg => "current line number", -statusmsg => "current line number of file being animated");
+
+ my $cur_exec_line = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_cur_exec_line}, -width =>  '5',  -anchor => 'e', -foreground => 'black', );
+ $balloon->attach($cur_exec_line, -balloonmsg => "current meta line number", -statusmsg => "current line number of the meta file");
+ 
+ my $pct_complete = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_pct_complete},  -width =>  '5',  -anchor => 'e', -foreground => 'black', );  
+ $balloon->attach($pct_complete, -balloonmsg => "percent complete of processing meta records", -statusmsg => "percent complete of meta file");
+ 
+ my $meta_start = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_meta_data_start_display}, -width => '10',  -anchor => 'e', -foreground => 'black');
+ $balloon->attach($meta_start, -balloonmsg => "position in the meta-file animation starts from", -statusmsg => "meta-file start pointer");
+ 
+ my $meta_end = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_meta_data_end_display},   -width => '10',  -anchor => 'e', -foreground => 'black');
+ $balloon->attach($meta_end, -balloonmsg => "position in the meta-file animation ends", -statusmsg => "meta-file end pointer");
+ 
+ # spacing
+ $self->{_status_bar}->addLabel( -relief         => 'flat',  -text   => "  ", -width =>  '2',  -anchor => 'w', -foreground => 'black', ); 
+ 
+ my $status = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_status}, -width => '10',  -anchor => 'center', -foreground => 'black', );
+ $balloon->attach($status, -balloonmsg => "current animation status", -statusmsg => "animation status");
+  
+ my $direction = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_direction},     -width => '5',   -anchor => 'center', -foreground => 'black', );
+ $balloon->attach($direction, -balloonmsg => "current animation direction", -statusmsg => "animation direction");
+ 
+ my $delay = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_delay_msg},     -width => '10',  -anchor => 'center', -foreground => 'black', );
+ $balloon->attach($delay, -balloonmsg => "current animation speed", -statusmsg => "animation speed");
+ }
 
 sub stop_app { 
 my $self = shift;
@@ -204,15 +399,69 @@ my $self = shift;
 
 sub set_stopped_state {
 my $self = shift;
+
  $self->set( '_status','STOPPED');
  $self->set( '_msg'   ,'Animation stopped.');
+ $self->set( '_saved_index', $self->{_index});
+
+ $self->set( '_saved_mod_end_seq',     $self->{_mw}->{_mod_end_seq}->get() );
+ $self->set( '_saved_mod_start_seq',   $self->{_mw}->{_mod_start_seq}->get() );
+ 
  exit(0) if -e '_exit_for_test';
 }
 
 sub set_started_state {
-my $self = shift;
+#
+# gathers program changes and processes them 
+#
+ my $self = shift;
+
+ # init status bar
+ $self->set('_meta_data_start', $self->{_mw}->{_mod_start_seq}->get()); 	
+ $self->set('_meta_data_start_display', sprintf( "%8d", $self->{_mw}->{_mod_start_seq}->get() ));
+ $self->set('_meta_data_end', $self->{_mw}->{_mod_end_seq}->get() );
+ $self->set('_meta_data_end_display', sprintf( "%8d", $self->{_mw}->{_mod_end_seq}->get() ));
  $self->set( '_status','RUNNING');
  $self->set( '_msg'   ,'Animation in Progress');
+
+ if ($self->{_mw}->{_mod_start_seq}->get() < 1 ) {
+    $self->{_mw}->messageBox(-title => "Error setting new start sequence", -type => "Ok", -message => "edit start sequence to be a integer greater then 0");
+    return(0);
+ }
+
+ if ($self->{_mw}->{_mod_start_seq}->get() >=  $self->{_mw}->{_mod_end_seq}->get() ) {
+    $self->{_mw}->messageBox(-title => "Error setting new start sequence", -type => "Ok", -message => "edit start sequence to be less then end sequence");
+    return(0);
+ }
+ 
+ if ( $self->{_mw}->{_mod_end_seq}->get() > $self->{_meta_data_end} ) {
+    $self->{_mw}->messageBox(-title => "Error setting new end sequence", -type => "Ok", -message => "edit end sequence to be less then end record of meta-data");
+    return(0);
+ } 
+
+   if ( $self->{_saved_mod_start_seq} != $self->{_mw}->{_mod_start_seq}->get() ) {
+       $self->set( '_index', $self->{_mw}->{_mod_start_seq}->get());
+      }
+      elsif ( $self->{_saved_mod_start_seq} == $self->{_mw}->{_mod_start_seq}->get() ) {
+               $self->set( '_index',  $self->{_index});
+            }
+}
+
+sub set_init_state {
+#
+# sets the defaults for the program when an initial state is requested
+# and is generally called after a change to the meta data is requested
+#
+my $self = shift;
+$self->set_stopped_state(); 
+$self->set( '_direction'   ,'FWD'); 
+# init status bar
+$self->set('_meta_data_start', 1); 	
+$self->set('_meta_data_start_display', 1);
+$self->set('_meta_data_end', scalar(@{$self->{_meta_ref}}) );  
+$self->set('_meta_data_end_display', sprintf( "%8d", scalar(@{$self->{_meta_ref}}) ) );
+$self->set( '_index', $self->{_mw}->{_mod_start_seq}->get()); 
+$self->set_started_state(); 
 }
 
 sub update_delay {
@@ -234,15 +483,16 @@ my $table = shift;
 my ($row, $col);
 
 
-    $table->configure( -rows => $self->{_frame_window} );
+    $table->configure( -rows => $self->{_frame_window}, -bg => 'white' );
     $table->configure( -fixedrows => 0 );
     for $row (1..$self->{_frame_window}) {
       $self->{_label_hash_ref}->{"${row}_1"} = $table->Label(-text   => '', -width  => 6,   -relief => 'flat', -background => 'white', -anchor => 'w');
       $table->put($row,1,$self->{_label_hash_ref}->{"${row}_1"});
-      $self->{_label_hash_ref}->{"${row}_2"} = $table->Label(-text   => '', -width  => 100, -relief => 'flat', -background => 'white', -anchor => 'w');
+      $self->{_label_hash_ref}->{"${row}_2"} = $table->Label(-text   => '', -width  => 150, -relief => 'flat', -background => 'white', -anchor => 'w');
+
       $table->put($row,2,$self->{_label_hash_ref}->{"${row}_2"});
     }
-    $table->pack(-expand => 'yes',-fill => 'both');
+    $table->pack(-expand => 0 ,-fill => 'both');
 }
 
 sub calculate_pct {
@@ -251,11 +501,11 @@ my $start = shift;
 my $end = shift;
 my $row = shift;
 
-   my $total_executions = abs($start-$end); 
+   my $total_executions = abs($start-$end)+1; 
    my $executions_done = abs($start-$row);   
    return(0) if ($total_executions == 0);
 
-   my $pct = int(($executions_done/$total_executions)*100);
+   my $pct = int((($executions_done/$total_executions)*100)+.1);
    return( $pct);
 }
 
@@ -304,11 +554,6 @@ my $file = shift;
   }
 } 
 
-sub get_meta_rows {
-my $self = shift;
-return( scalar( @{$self->{_meta_ref}} ));
-} 
-
 sub trim {
 my $self = shift;
 my $str = shift;
@@ -333,7 +578,6 @@ my $upper_constraint = shift;
    }
 }
 
-
 sub dump_self {
 my $self = shift;
 
@@ -349,29 +593,55 @@ print  '########################################################################
 
 sub retreiving_data {
 my $self = shift;
-    if ( $self->{_direction} eq 'FWD' ) {  	   
-            if ( $self->get_meta_rows() <= int($self->{_index})+1) 	      
+
+
+
+    if ( $self->{_direction} eq 'FWD' ) { 
+	  if ( $self->{_first_read} eq 'TRUE' ) {
+		$self->set( '_first_read', 'FALSE');
+        return(1);  
+       }	
+	
+            if ( $self->{_mw}->{_mod_end_seq}->get() <= int($self->{_index})+1) # error check  			
               {  
+			  $self->set( '_first_read', 'TRUE');
+			     if ( $self->{_repeat} eq 'YES' ) {
+			       $self->{_index} = $self->{_mw}->{_mod_start_seq}->get()-1; 
+				   return(1)
+			     }
+              $self->set( '_cur_exec_line', $self->{_index});
               $self->set_stopped_state; 
+
               return(0);
               }		  
               else { 
-                   $self->set( '_index', $self->{_index}+1); 
+                   $self->set( '_index', $self->{_index}+1); 			   
                    return(1);
                    }	
     }
 
+
+     # if direction is reverse
+     #  and the start sequence is less or equal to the index 
+     #    and in repeat mode set the index to the end sequence
+
+
     if ( $self->{_direction} eq 'REV' ) {
-  	   if ( 1 >= int($self->{_index})+1) 	      
-             {  
+  	        if ( $self->{_mw}->{_mod_start_seq}->get() >= int($self->{_index})+1) 	      
+             {               
+			     if ( $self->{_repeat} eq 'YES' ) {
+    		        $self->{_index} = $self->{_mw}->{_mod_end_seq}->get()-1;
+			        return(1)
+			     }
+             $self->set( '_cur_exec_line', $self->{_index});
              $self->set_stopped_state;  
              return(0);
-             }		  
+             }		 
              else { 
                   $self->set( '_index', $self->{_index}-1); 
                   return(1);
                   }
-   }
+    }
 }
 
 sub get_file_splice {
@@ -534,17 +804,23 @@ my $table = shift;
 
     $self->{_mw}->update; 
     return if ($self->{_status} eq 'STOPPED');  
+    return if ($self->{_status} eq 'INIT');  	
     return if (! $self->done_loading_meta_data()); 
 
     return unless $self->retreiving_data();
-
+	
     $self->set( '_sequence', $self->trim( substr $self->{'_meta_ref'}[ $self->{'_index'}], 0, 6) );
     $self->set( '_file', substr $self->{'_meta_ref'}[ $self->{'_index'}], 6, 128);
     $self->set( '_line', $self->trim( substr $self->{'_meta_ref'}[ $self->{'_index'}], 134, 6) );
     $self->set( '_code', substr $self->{'_meta_ref'}[ $self->{'_index'}], 140, 80);
     $self->set( '_cur_srce_line', $self->{_line} );
     $self->set( '_cur_exec_line', $self->{_sequence} );
-    $self->set( '_pct_complete',  $self->calculate_pct( 1, $self->get_meta_rows(), $self->{'_index'}+1) . ' %');
+	
+	my $dir_offset;
+	if ( $self->{_direction} eq 'FWD' ) { $dir_offset = 2; }
+	else                                { $dir_offset = 1; }
+	
+    $self->set( '_pct_complete',  $self->calculate_pct( $self->{_mw}->{_mod_start_seq}->get(), $self->{_mw}->{_mod_end_seq}->get(), $self->{'_index'}+$dir_offset) . ' %');
 
     $self->{_file} = $self->good_filename( $self->{_file} );
     return if ! defined($self->{_file});
@@ -559,15 +835,16 @@ my $table = shift;
     #     - frame_window/2 and line_number + frame_window/2 from the file and
     #     load that to the display
 
-    if ( ! defined($self->{_loaded_file}) or ($self->{_file} ne $self->{_loaded_file} )) {
+    if ( ! defined($self->{_loaded_file}) or ($self->{_file} ne $self->{_loaded_file} ) or ($self->{_status} eq 'INIT')) {
        $self->set( '_loaded_file', $self->{_file}); 
        my $file_splice_ref = $self->get_file_splice( $self->{_file}, $self->{_line});
        $self->set( '_file_splice_ref', $file_splice_ref );   
        $self->load_display(  $self->{_file_splice_ref}, $self->{_line}, $self->{_offset}, $self->{_table});
        $self->set( '_screen_mode', 'load'); 
+	   $self->set( '_status', 'RUNNING');
     }
     # if it is not an initial file or new file, ccheck if the window parameters on
-    # the file haave changed ot normal SOP 
+    # the file have changed ot normal SOP 
     elsif ( $self->changed_window() ) {
             $self->set( '_file_splice_ref', $self->get_file_splice( $self->{_file}, $self->{_line}) );   
             $self->load_display(  $self->{_file_splice_ref}, $self->{_line}, $self->{_offset}, $self->{_table});
@@ -592,7 +869,8 @@ my ( $obj );
 $obj = new Devel(); 
 
 # initialization
-$obj->set('_filesize', 0);
+$obj->set( '_first_read', 'TRUE' );
+$obj->set( '_filesize', 0);
 $obj->set( '_mw', new MainWindow() );
 $obj->set( '_screen_width', $obj->get_screen_width( $obj->{_mw} ) );
 $obj->set( '_screen_height', $obj->get_screen_height() );
@@ -614,6 +892,8 @@ $obj->set( '_msg', 'please wait' );
 $obj->set( '_label_hash_ref', undef );
 $obj->set( '_last_line', undef);
 $obj->set( '_animate', 'animate.pl');
+$obj->set( '_bypass_file_ref', \() );
+
 
 # I/O
 $obj->set_stack_file;
@@ -621,7 +901,7 @@ $obj->set_stack_file;
 # create display
 $obj->{_mw}->geometry('+0+0');
 $obj->{_mw}->maxsize($obj->{_screen_width},$obj->{_screen_height});
-$obj->{_mw}->minsize("100",$obj->{_screen_height});
+$obj->{_mw}->minsize($obj->{_screen_width},$obj->{_screen_height});
 $obj->create_control();
 $obj->create_table();
 $obj->create_status_bar();
@@ -632,26 +912,47 @@ MainLoop();
 
 =head1 NAME
 
-Devel::Animator - The great new Devel::Animator!
+Devel::Animator - trace based source code animator
 
 =head1 VERSION
 
-Version 1.00
+Version 2.00
 
 =cut
 
-our $VERSION = '1.00';
+our $VERSION = '2.00';
 
 
 =head1 SYNOPSIS
 
     perl -d:Animator program
 
-     Animator lets you run a program and watch program flow like a movie. 
-    You can stop animation and start it again, reverse direction from forward
-    to backwards, and backwards to forward. You can change the animation speed 
-    from 10 milliseconds to 2000 milliseconds between statements.
+          Animator takes as its input the animated programs trace output. i.e. that 
+	 which you may get from running 'perl -d:Trace program' from Devel::Trace. Animation
+	 of this trace presents the user with a highlighted line currently being executed.
 
+=head1 DESCRIPTION
+
+     exit {button}  - 
+	   terminates application	 
+	 stop {button}  - 
+	   stops current animation
+	 start {button} - 
+	   start the animation process
+	 reset {button} - 
+	   restart the animation form the beginning
+	 speed {drop down} - 
+	   set the speed in milli-seconds for the animation
+	 direction {drop down} - 
+	   specify direction fwd|rev -- ** reverse will be deprecated next release
+	 bypass a file {drop down} - 
+	   bypass other files your program may call through require or use from animation
+	 start sequence number {text field} - 
+	   user editable field, contains start sequence record from trace file 
+	   where you want to start animation.
+	   
+	   
+	   
 =head1 AUTHOR
 
 Dennis Spera, C<< <asaag at cpan.org> >>
