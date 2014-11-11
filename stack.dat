@@ -1,0 +1,4 @@
+     0test1.pl                                                                                                                             1print "test1","\n";                                                             
+     1test1.pl                                                                                                                             3my $x=1;                                                                        
+     2test1.pl                                                                                                                             5print $x,"\n";                                                                  
+     3test1.pl                                                                                                                             7exit(0);                                                                        
