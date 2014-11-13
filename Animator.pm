@@ -1,6 +1,6 @@
    
     package Devel::Animator;   
-    our $VERSION = '2.00';   
+    our $VERSION = '2.20';   
     my $pl  = 'animate.pl';
     my $stk = 'stack.dat'; 
 	$DB::index=1;
@@ -916,11 +916,11 @@ Devel::Animator - trace based source code animator
 
 =head1 VERSION
 
-Version 2.00
+Version 2.20
 
 =cut
 
-our $VERSION = '2.00';
+our $VERSION = '2.20';
 
 
 =head1 SYNOPSIS
