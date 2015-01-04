@@ -33,10 +33,14 @@
       "runtime" : {
          "requires" : {
 		    "Tk" : "0",
-		    "Tk::StatusBar" : "0"
+		    "Tk::StatusBar" : "0",
+		    "Tk::Table" : "0",
+		    "Tk::BrowseEntry" : "0",
+		    "Tk::Balloon" : "0",
+		    "File::stat" : "0"
 		 }
       }
    },
    "release_status" : "stable",
-   "version" : "2.00"
+   "version" : "2.30"
 }

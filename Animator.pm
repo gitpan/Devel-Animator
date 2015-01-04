@@ -1,6 +1,6 @@
    
     package Devel::Animator;   
-    our $VERSION = '2.20';   
+    our $VERSION = '2.30';   
     my $pl  = 'animate.pl';
     my $stk = 'stack.dat'; 
 	$DB::index=1;
@@ -284,12 +284,10 @@ $self->{_mw}->{_filelist}->pack(-side=>"right");
 
 $balloon->attach($self->{_mw}->{_filelist}, -balloonmsg => "omit from animation", -statusmsg => "select a file to omit from animation");
 
-$self->{_mw}->{_dir}      = $frame->BrowseEntry(-label => "Direction", -variable => \$self->{_direction}, -width => '10');
-$self->{_mw}->{_dir}->insert("end", "FWD");
-$self->{_mw}->{_dir}->insert("end", "REV");
-$self->{_mw}->{_dir}->pack(-side=>"right");
-
-$balloon->attach($self->{_mw}->{_dir}, -balloonmsg => "select direction", -statusmsg => "select forward or reverse direction for animation");
+#$self->{_mw}->{_dir}      = $frame->BrowseEntry(-label => "Direction", -variable => \$self->{_direction}, -width => '10');
+#$self->{_mw}->{_dir}->insert("end", "FWD");
+#$self->{_mw}->{_dir}->insert("end", "REV");
+#$self->{_mw}->{_dir}->pack(-side=>"right");
 
 $self->{_mw}->{speed}  = $frame->BrowseEntry(-label => "Speed(ms)", -variable => \$self->{_delay}, -width => '10', -browsecmd => sub { $self->update_delay($self->{_delay}) }  );
 $self->{_mw}->{speed}->insert("end", "50");
@@ -380,8 +378,8 @@ my $self = shift;
  my $status = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_status}, -width => '10',  -anchor => 'center', -foreground => 'black', );
  $balloon->attach($status, -balloonmsg => "current animation status", -statusmsg => "animation status");
   
- my $direction = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_direction},     -width => '5',   -anchor => 'center', -foreground => 'black', );
- $balloon->attach($direction, -balloonmsg => "current animation direction", -statusmsg => "animation direction");
+ #my $direction = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_direction},     -width => '5',   -anchor => 'center', -foreground => 'black', );
+ #$balloon->attach($direction, -balloonmsg => "current animation direction", -statusmsg => "animation direction");
  
  my $delay = $self->{_status_bar}->addLabel( -textvariable   => \$self->{_delay_msg},     -width => '10',  -anchor => 'center', -foreground => 'black', );
  $balloon->attach($delay, -balloonmsg => "current animation speed", -statusmsg => "animation speed");
@@ -486,11 +484,16 @@ my ($row, $col);
     $table->configure( -rows => $self->{_frame_window}, -bg => 'white' );
     $table->configure( -fixedrows => 0 );
     for $row (1..$self->{_frame_window}) {
+
       $self->{_label_hash_ref}->{"${row}_1"} = $table->Label(-text   => '', -width  => 6,   -relief => 'flat', -background => 'white', -anchor => 'w');
       $table->put($row,1,$self->{_label_hash_ref}->{"${row}_1"});
-      $self->{_label_hash_ref}->{"${row}_2"} = $table->Label(-text   => '', -width  => 150, -relief => 'flat', -background => 'white', -anchor => 'w');
 
+      $self->{_label_hash_ref}->{"${row}_2"} = $table->Label(-text   => '', -width  => 6,   -relief => 'flat', -background => 'white', -anchor => 'w');
       $table->put($row,2,$self->{_label_hash_ref}->{"${row}_2"});
+
+      $self->{_label_hash_ref}->{"${row}_3"} = $table->Label(-text   => '', -width  => 150, -relief => 'flat', -background => 'white', -anchor => 'w');
+      $table->put($row,3,$self->{_label_hash_ref}->{"${row}_3"});
+      
     }
     $table->pack(-expand => 0 ,-fill => 'both');
 }
@@ -621,11 +624,6 @@ my $self = shift;
     }
 
 
-     # if direction is reverse
-     #  and the start sequence is less or equal to the index 
-     #    and in repeat mode set the index to the end sequence
-
-
     if ( $self->{_direction} eq 'REV' ) {
   	        if ( $self->{_mw}->{_mod_start_seq}->get() >= int($self->{_index})+1) 	      
              {               
@@ -703,16 +701,21 @@ my ($row );
        }
 
        for $row (1..$self->{_frame_window}) {
+       
          $self->{_label_hash_ref}->{"${row}_1"}->configure(-text   => '',-background => 'white');
          $self->{_label_hash_ref}->{"${row}_2"}->configure(-text   => '',-background => 'white');
+         $self->{_label_hash_ref}->{"${row}_3"}->configure(-text   => '',-background => 'white');     
+         
          $row++;
        }
 
        $row=1;
        foreach (@$array_ref) {
+                   
+        $self->{_label_hash_ref}->{"${row}_1"}->configure(-text => $self->{_executions_ref}->{$self->{ '_loaded_file' } . $line_label } );
+        $self->{_label_hash_ref}->{"${row}_2"}->configure(-text => $line_label++);
+        $self->{_label_hash_ref}->{"${row}_3"}->configure(-text => $self->trim($_));
         
-        $self->{_label_hash_ref}->{"${row}_1"}->configure(-text => $line_label++);
-        $self->{_label_hash_ref}->{"${row}_2"}->configure(-text => $self->trim($_));
         $lno++;
         $row++;    
        }
@@ -765,12 +768,44 @@ if ( defined($lastline) and $self->{_screen_mode} ne 'load') {
  $w->configure(-background => 'white') if (defined($w));
  $w = $table->get($lastline-$self->{_offset}+1, 2);
  $w->configure(-background => 'white') if (defined($w));
+ $w = $table->get($lastline-$self->{_offset}+1, 3);
+ $w->configure(-background => 'white') if (defined($w));
+ 
 }
 
-$w = $table->get($line-$self->{_offset}+1, 1);
-$w->configure(-background => 'pink') if (defined($w));
-$w = $table->get($line-$self->{_offset}+1, 2);
-$w->configure(-background => 'pink') if (defined($w));     
+#---
+#
+# get executions
+#
+#---
+my $exec_line = $table->get($line-$self->{_offset}+1, 1);
+$exec_line->configure(-background => 'pink') if (defined($exec_line));
+my $executions = $exec_line->cget('-text');
+
+#---
+#
+# get line number for source file
+#
+#---
+
+my $line_no = $table->get($line-$self->{_offset}+1, 2);
+$line_no->configure(-background => 'pink') if (defined($line_no));     
+
+my $line_number = $line_no->cget('-text');
+       if ( ! defined($self->{_executions_ref}->{$self->{ '_loaded_file' } . $line_number }) ) { 
+              $self->{_executions_ref}->{$self->{ '_loaded_file' } . $line_number }= 1;
+          }
+        else {
+               $self->{_executions_ref}->{$self->{ '_loaded_file' } . $line_number }++;
+             }
+             
+# update executions
+$exec_line->configure(-text => $self->{_executions_ref}->{$self->{ '_loaded_file' } . $line_number });
+
+
+my $code = $table->get($line-$self->{_offset}+1, 3);
+$code->configure(-background => 'pink') if (defined($code));     
+
 $table->see($line-$self->{_offset}+1, 1);
 }
 
@@ -869,6 +904,7 @@ my ( $obj );
 $obj = new Devel(); 
 
 # initialization
+$obj->set( '_executions_ref', undef);
 $obj->set( '_first_read', 'TRUE' );
 $obj->set( '_filesize', 0);
 $obj->set( '_mw', new MainWindow() );
@@ -916,11 +952,11 @@ Devel::Animator - trace based source code animator
 
 =head1 VERSION
 
-Version 2.20
+Version 2.30
 
 =cut
 
-our $VERSION = '2.20';
+our $VERSION = '2.30';
 
 
 =head1 SYNOPSIS
@@ -943,8 +979,6 @@ our $VERSION = '2.20';
 	   restart the animation form the beginning
 	 speed {drop down} - 
 	   set the speed in milli-seconds for the animation
-	 direction {drop down} - 
-	   specify direction fwd|rev -- ** reverse will be deprecated next release
 	 bypass a file {drop down} - 
 	   bypass other files your program may call through require or use from animation
 	 start sequence number {text field} - 
